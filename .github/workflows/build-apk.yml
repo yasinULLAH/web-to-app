@@ -46,12 +46,17 @@ jobs:
             "ndk;28.2.13676358"
 
       - name: Build debug APK
-        run: ./gradlew --no-daemon --no-configuration-cache :app:assembleDebug
+        run: ./gradlew --no-daemon --no-configuration-cache --stacktrace :app:assembleDebug
+
+      - name: Locate generated APKs
+        run: |
+          echo "Searching APK outputs..."
+          find app/build/outputs -type f -name "*.apk" -print || true
 
       - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: web-to-app-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
           retention-days: 7
