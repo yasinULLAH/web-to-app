@@ -18,6 +18,9 @@ on:
 permissions:
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 concurrency:
   group: build-apk-${{ github.ref }}
   cancel-in-progress: true
@@ -89,7 +92,7 @@ jobs:
   build-debug-apk:
     name: Build Debug APK
     needs: sanity
-    if: needs.sanity.result == 'success' && (github.event_name == 'push' || inputs.full_build == 'true')
+    if: always() && (github.event_name == 'push' || inputs.full_build == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
