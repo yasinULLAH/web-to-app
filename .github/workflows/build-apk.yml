@@ -1,4 +1,4 @@
-﻿name: Build APK
+name: Build APK
 
 on:
   workflow_dispatch:
@@ -49,6 +49,11 @@ jobs:
         with:
           cache-provider: basic
 
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: false
+          
       - name: Install Android packages
         run: |
           sdkmanager --install \
