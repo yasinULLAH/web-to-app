@@ -1939,7 +1939,7 @@ fun BuildApkDialog(
                     title = Strings.buildFailed,
                     stage = "build_apk_unhandled",
                     webApp = webAppWithConfig,
-                    summary = Strings.buildFailedWithMessage.replace("%s", t.message ?: "Unhandled exception"),
+                    summary = Strings.shareApkFailed.replace("%s", t.message ?: "Unhandled exception"),
                     throwable = t
                 )
                 isBuilding = false
