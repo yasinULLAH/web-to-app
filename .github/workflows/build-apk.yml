@@ -2,6 +2,15 @@
 
 on:
   workflow_dispatch:
+    inputs:
+      full_build:
+        description: Run full APK build
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
   push:
     branches:
       - codex/nativebridge-validation-report
@@ -14,7 +23,60 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  sanity:
+    name: Sanity Check (Fast)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-provider: basic
+
+      - name: Install Android packages
+        run: |
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "cmake;3.22.1" \
+            "ndk;28.2.13676358"
+
+      - name: Run fast sanity tasks
+        run: |
+          ./gradlew --no-daemon --no-configuration-cache --stacktrace \
+            :app:compileDebugKotlin \
+            :app:kspDebugKotlin
+
+      - name: Upload sanity logs (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sanity-logs
+          path: |
+            **/build/reports/**
+            **/build/outputs/logs/**
+            **/*.log
+          if-no-files-found: warn
+          retention-days: 7
+
   build-debug-apk:
+    name: Build Debug APK
+    needs: sanity
+    if: needs.sanity.result == 'success' && (github.event_name == 'push' || inputs.full_build == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
@@ -26,7 +88,7 @@ jobs:
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -49,14 +111,28 @@ jobs:
         run: ./gradlew --no-daemon --no-configuration-cache --stacktrace :app:assembleDebug
 
       - name: Locate generated APKs
+        if: always()
         run: |
           echo "Searching APK outputs..."
           find app/build/outputs -type f -name "*.apk" -print || true
 
       - name: Upload debug APK artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: web-to-app-debug-apk
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload build logs (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            **/build/reports/**
+            **/build/outputs/logs/**
+            **/*.log
+          if-no-files-found: warn
           retention-days: 7
