@@ -793,7 +793,7 @@ if (NativeBridge.isFullscreen()) {
     @JavascriptInterface
     fun isDeveloperOptionsEnabled(): Boolean {
         return try {
-            Settings.Secure.getInt(
+            Settings.Global.getInt(
                 context.contentResolver,
                 Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0
             ) == 1
@@ -806,7 +806,7 @@ if (NativeBridge.isFullscreen()) {
     @JavascriptInterface
     fun isAdbEnabled(): Boolean {
         return try {
-            Settings.Secure.getInt(
+            Settings.Global.getInt(
                 context.contentResolver,
                 Settings.Global.ADB_ENABLED, 0
             ) == 1
@@ -829,14 +829,14 @@ if (NativeBridge.isFullscreen()) {
     fun getSecurityInfo(): String {
         return try {
             val devOptions = try {
-                Settings.Secure.getInt(
+                Settings.Global.getInt(
                     context.contentResolver,
                     Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0
                 ) == 1
             } catch (e: Exception) { false }
 
             val adbEnabled = try {
-                Settings.Secure.getInt(
+                Settings.Global.getInt(
                     context.contentResolver,
                     Settings.Global.ADB_ENABLED, 0
                 ) == 1
