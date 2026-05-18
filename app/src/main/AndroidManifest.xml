@@ -351,6 +351,11 @@
                 <action android:name="com.webtoapp.ACTION_SCHEDULED_START" />
             </intent-filter>
         </receiver>
+
+        <receiver
+            android:name=".core.webview.BridgeNotificationReceiver"
+            android:enabled="true"
+            android:exported="false" />
         
         
         <receiver

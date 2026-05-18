@@ -276,6 +276,20 @@ Google flows fall back to a Chrome Custom Tab with shared cookies (via
 - **Web Notification polyfill** plus a URL-polling foreground service with
   configurable interval (5 min minimum), JSON parsing, and GET / POST with
   custom headers.
+- **NativeBridge security + runtime API set** for packaged APK testing and
+  automation, including:
+  - Security: `isDeveloperOptionsEnabled`, `isAdbEnabled`,
+    `isDebuggable`, `getSecurityInfo`
+  - Notification/runtime: `requestNotificationPermission`,
+    `areNotificationsEnabled`, `openNotificationSettings`,
+    `createNotificationChannel`, `showNotification`, `scheduleNotification`,
+    `cancelNotification`, `cancelAllNotifications`,
+    `startBackgroundService`, `stopBackgroundService`,
+    `isBackgroundServiceRunning`, `scheduleWorker`,
+    `scheduleExactAlarm`, `canScheduleExactAlarms`,
+    `isDozeMode`, `isIgnoringBatteryOptimizations`,
+    `openBatteryOptimizationSettings`, `getAppState`,
+    `isAppInForeground`
 - Custom URL schemes with configurable host patterns.
 - Boot auto-start (`BOOT_COMPLETED`, `QUICKBOOT_POWERON`,
   `MY_PACKAGE_REPLACED`, time / timezone change).

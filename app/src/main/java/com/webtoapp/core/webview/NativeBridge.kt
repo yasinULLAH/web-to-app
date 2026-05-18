@@ -1,6 +1,8 @@
 package com.webtoapp.core.webview
 
 import android.app.Activity
+import android.app.ActivityManager
+import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -14,6 +16,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ActivityInfo
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -27,6 +30,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.webtoapp.core.i18n.Strings
+import com.webtoapp.core.background.BackgroundRunService
 import com.webtoapp.util.MediaSaver
 import com.webtoapp.util.getUrlScheme
 import com.webtoapp.util.isAllowedUrlScheme
@@ -45,6 +49,7 @@ import java.io.ByteArrayOutputStream
 import java.net.URI
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import org.json.JSONObject
 
 
 
@@ -59,6 +64,17 @@ class NativeBridge(
 ) {
     companion object {
         const val JS_INTERFACE_NAME = "NativeBridge"
+        const val BRIDGE_NOTIFICATION_ACTION = "com.webtoapp.action.BRIDGE_NOTIFICATION"
+        const val EXTRA_BRIDGE_TITLE = "bridge_title"
+        const val EXTRA_BRIDGE_BODY = "bridge_body"
+        const val EXTRA_BRIDGE_TAG = "bridge_tag"
+        const val EXTRA_BRIDGE_CHANNEL_ID = "bridge_channel_id"
+        const val EXTRA_BRIDGE_CHANNEL_NAME = "bridge_channel_name"
+        const val EXTRA_BRIDGE_CHANNEL_DESC = "bridge_channel_desc"
+        const val EXTRA_BRIDGE_IMPORTANCE = "bridge_importance"
+        const val EXTRA_BRIDGE_VIBRATE = "bridge_vibrate"
+        const val EXTRA_BRIDGE_SOUND = "bridge_sound"
+        const val EXTRA_BRIDGE_DEEP_LINK = "bridge_deep_link"
         private const val PRIVATE_NETWORK_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
         private val SKIP_PROXY_HEADERS = setOf(
             "host",
@@ -648,6 +664,235 @@ if (NativeBridge.isFullscreen()) {
             }
         }
         return getNotificationPermissionState()
+    }
+
+    @JavascriptInterface
+    fun areNotificationsEnabled(): Boolean {
+        return getNotificationPermissionState() == "granted"
+    }
+
+    @JavascriptInterface
+    fun openNotificationSettings(): Boolean {
+        return try {
+            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            } else {
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            }
+            context.startActivity(intent)
+            true
+        } catch (e: Exception) {
+            AppLogger.e("NativeBridge", "Open notification settings failed", e)
+            false
+        }
+    }
+
+    @JavascriptInterface
+    fun createNotificationChannel(
+        channelId: String,
+        channelName: String,
+        description: String,
+        importance: String,
+        enableVibration: Boolean
+    ): Boolean {
+        return ensureBridgeNotificationChannel(
+            channelId = channelId,
+            channelName = channelName,
+            description = description,
+            importance = importance,
+            enableVibration = enableVibration
+        )
+    }
+
+    @JavascriptInterface
+    fun showNotification(payload: String): Boolean {
+        val payloadJson = parseNotificationPayload(payload)
+        return postBridgeNotification(payloadJson)
+    }
+
+    @JavascriptInterface
+    fun scheduleNotification(payload: String): Boolean {
+        val payloadJson = parseNotificationPayload(payload)
+        return scheduleBridgeNotification(payloadJson, forceExact = false)
+    }
+
+    @JavascriptInterface
+    fun cancelNotification(tag: String, legacyTag: String): Boolean {
+        return try {
+            val manager = NotificationManagerCompat.from(context)
+            val tags = buildList {
+                if (tag.isNotBlank()) add(tag)
+                if (legacyTag.isNotBlank() && legacyTag != tag) add(legacyTag)
+            }
+            tags.forEach { value ->
+                manager.cancel(value, value.hashCode())
+                cancelBridgeAlarm(value)
+            }
+            true
+        } catch (e: Exception) {
+            AppLogger.e("NativeBridge", "Cancel notification failed", e)
+            false
+        }
+    }
+
+    @JavascriptInterface
+    fun cancelAllNotifications(): Boolean {
+        return try {
+            NotificationManagerCompat.from(context).cancelAll()
+            true
+        } catch (e: Exception) {
+            AppLogger.e("NativeBridge", "Cancel all notifications failed", e)
+            false
+        }
+    }
+
+    @JavascriptInterface
+    fun startBackgroundService(configJson: String): Boolean {
+        return try {
+            val json = parseNotificationPayload(configJson)
+            val appName = json.optString("appName", context.applicationInfo.loadLabel(context.packageManager).toString())
+            val title = readJsonString(json, "notificationTitle", "title")
+            val body = readJsonString(json, "notificationContent", "body", "text", "message")
+            val showNotification = json.optBoolean("showNotification", true)
+            val keepCpuAwake = json.optBoolean("keepCpuAwake", true)
+            BackgroundRunService.start(
+                context = context,
+                appName = appName,
+                notificationTitle = title,
+                notificationContent = body,
+                showNotification = showNotification,
+                keepCpuAwake = keepCpuAwake
+            )
+            true
+        } catch (e: Exception) {
+            AppLogger.e("NativeBridge", "Start background service failed", e)
+            false
+        }
+    }
+
+    @JavascriptInterface
+    fun stopBackgroundService(): Boolean {
+        return try {
+            BackgroundRunService.stop(context)
+            true
+        } catch (e: Exception) {
+            AppLogger.e("NativeBridge", "Stop background service failed", e)
+            false
+        }
+    }
+
+    @JavascriptInterface
+    fun isBackgroundServiceRunning(): Boolean {
+        return BackgroundRunService.isServiceRunning()
+    }
+
+    @JavascriptInterface
+    fun scheduleWorker(delayMs: Long, workerTag: String): Boolean {
+        val payload = JSONObject().apply {
+            put("title", "Background worker task")
+            put("body", "Worker task \"$workerTag\" executed")
+            put("tag", if (workerTag.isBlank()) "worker_${System.currentTimeMillis()}" else workerTag)
+            put("delaySec", if (delayMs <= 0L) 0L else delayMs / 1000L)
+        }
+        return scheduleBridgeNotification(payload, forceExact = false)
+    }
+
+    @JavascriptInterface
+    fun scheduleExactAlarm(triggerAtEpochSeconds: Long, alarmTag: String, payloadJson: String): Boolean {
+        val payload = parseNotificationPayload(payloadJson).apply {
+            if (alarmTag.isNotBlank()) put("tag", alarmTag)
+            val triggerMs = if (triggerAtEpochSeconds in 1..99999999999L) {
+                triggerAtEpochSeconds * 1000L
+            } else {
+                triggerAtEpochSeconds
+            }
+            put("triggerAt", triggerMs)
+        }
+        return scheduleBridgeNotification(payload, forceExact = true)
+    }
+
+    @JavascriptInterface
+    fun canScheduleExactAlarms(): Boolean {
+        return try {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) alarmManager.canScheduleExactAlarms() else true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    @JavascriptInterface
+    fun isDozeMode(): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+                pm?.isDeviceIdleMode == true
+            } else {
+                false
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    @JavascriptInterface
+    fun isIgnoringBatteryOptimizations(): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager
+                pm?.isIgnoringBatteryOptimizations(context.packageName) == true
+            } else {
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    @JavascriptInterface
+    fun openBatteryOptimizationSettings(): Boolean {
+        return try {
+            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            } else {
+                Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            }
+            context.startActivity(intent)
+            true
+        } catch (e: Exception) {
+            AppLogger.e("NativeBridge", "Open battery optimization settings failed", e)
+            false
+        }
+    }
+
+    @JavascriptInterface
+    fun getAppState(): String {
+        return if (isAppInForeground()) "FOREGROUND" else "BACKGROUND"
+    }
+
+    @JavascriptInterface
+    fun isAppInForeground(): Boolean {
+        return try {
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return false
+            val running = am.runningAppProcesses ?: return false
+            running.any { proc ->
+                proc.processName == context.packageName &&
+                    proc.importance <= ActivityManager.RunningAppProcessInfo.IMPORTANCE_FOREGROUND
+            }
+        } catch (_: Exception) {
+            false
+        }
     }
 
     @JavascriptInterface
@@ -1410,6 +1655,235 @@ if (NativeBridge.isFullscreen()) {
                 (decorView.systemUiVisibility and android.view.View.SYSTEM_UI_FLAG_FULLSCREEN) != 0
             }
         } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun parseNotificationPayload(input: String): JSONObject {
+        return try {
+            val trimmed = input.trim()
+            when {
+                trimmed.startsWith("{") -> JSONObject(trimmed)
+                trimmed.isNotBlank() -> JSONObject().apply {
+                    put("title", trimmed)
+                    put("body", "")
+                }
+                else -> JSONObject()
+            }
+        } catch (_: Exception) {
+            JSONObject().apply {
+                if (input.isNotBlank()) put("title", input.take(120))
+            }
+        }
+    }
+
+    private fun readJsonString(json: JSONObject, vararg keys: String): String {
+        for (key in keys) {
+            val value = json.optString(key, "")
+            if (value.isNotBlank()) return value
+        }
+        return ""
+    }
+
+    private fun readJsonLong(json: JSONObject, vararg keys: String): Long? {
+        for (key in keys) {
+            val value = json.opt(key) ?: continue
+            when (value) {
+                is Number -> return value.toLong()
+                is String -> value.toLongOrNull()?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun mapNotificationImportance(raw: String): Int {
+        return when (raw.trim().lowercase(Locale.ROOT)) {
+            "max" -> NotificationManager.IMPORTANCE_MAX
+            "high", "urgent" -> NotificationManager.IMPORTANCE_HIGH
+            "low" -> NotificationManager.IMPORTANCE_LOW
+            "min" -> NotificationManager.IMPORTANCE_MIN
+            "none", "silent" -> NotificationManager.IMPORTANCE_NONE
+            else -> NotificationManager.IMPORTANCE_DEFAULT
+        }
+    }
+
+    private fun ensureBridgeNotificationChannel(
+        channelId: String,
+        channelName: String,
+        description: String,
+        importance: String,
+        enableVibration: Boolean
+    ): Boolean {
+        return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                val id = channelId.ifBlank { "webapp_notifications" }
+                val name = channelName.ifBlank { Strings.webAppNotificationChannelName }
+                val channel = NotificationChannel(id, name, mapNotificationImportance(importance)).apply {
+                    this.description = description.ifBlank { "WebToApp bridge notifications" }
+                    enableVibration(enableVibration)
+                    setShowBadge(true)
+                }
+                manager.createNotificationChannel(channel)
+            }
+            true
+        } catch (e: Exception) {
+            AppLogger.e("NativeBridge", "Create notification channel failed", e)
+            false
+        }
+    }
+
+    private fun buildLaunchPendingIntent(tag: String, deepLink: String?): PendingIntent {
+        val targetIntent = if (!deepLink.isNullOrBlank()) {
+            Intent(Intent.ACTION_VIEW, Uri.parse(deepLink)).apply {
+                setPackage(context.packageName)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+        } else {
+            context.packageManager.getLaunchIntentForPackage(context.packageName)
+                ?.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP) }
+                ?: Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                }
+        }
+        return PendingIntent.getActivity(
+            context,
+            tag.hashCode(),
+            targetIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    private fun postBridgeNotification(payloadJson: JSONObject): Boolean {
+        return try {
+            if (getNotificationPermissionState() != "granted") return false
+
+            val channelId = readJsonString(payloadJson, "channelId", "channel").ifBlank { "webapp_notifications" }
+            val channelName = readJsonString(payloadJson, "channelName").ifBlank { Strings.webAppNotificationChannelName }
+            val channelDesc = readJsonString(payloadJson, "channelDescription", "description")
+            val importance = readJsonString(payloadJson, "importance", "priority")
+            val vibrate = payloadJson.optBoolean("vibrate", true)
+            ensureBridgeNotificationChannel(channelId, channelName, channelDesc, importance, vibrate)
+
+            val title = readJsonString(payloadJson, "title", "notificationTitle")
+                .ifBlank { context.applicationInfo.loadLabel(context.packageManager).toString() }
+            val body = readJsonString(payloadJson, "body", "text", "message", "notificationContent")
+            val tag = readJsonString(payloadJson, "tag", "id", "notificationId")
+                .ifBlank { "bridge_${System.currentTimeMillis()}" }
+            val deepLink = readJsonString(payloadJson, "deepLink", "url").ifBlank { null }
+
+            val builder = NotificationCompat.Builder(context, channelId)
+                .setSmallIcon(context.applicationInfo.icon)
+                .setContentTitle(title)
+                .setContentText(body)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+                .setAutoCancel(payloadJson.optBoolean("autoCancel", true))
+                .setOngoing(payloadJson.optBoolean("ongoing", false))
+                .setPriority(
+                    when (importance.trim().lowercase(Locale.ROOT)) {
+                        "max", "high", "urgent" -> NotificationCompat.PRIORITY_HIGH
+                        "low" -> NotificationCompat.PRIORITY_LOW
+                        "min", "silent" -> NotificationCompat.PRIORITY_MIN
+                        else -> NotificationCompat.PRIORITY_DEFAULT
+                    }
+                )
+                .setContentIntent(buildLaunchPendingIntent(tag, deepLink))
+
+            if (vibrate) {
+                val patternArray = payloadJson.optJSONArray("vibration")
+                val pattern = if (patternArray != null && patternArray.length() > 0) {
+                    LongArray(patternArray.length()) { idx -> patternArray.optLong(idx, 0L) }
+                } else {
+                    longArrayOf(0L, 250L, 150L, 250L)
+                }
+                builder.setVibrate(pattern)
+            }
+
+            val manager = NotificationManagerCompat.from(context)
+            manager.notify(tag, tag.hashCode(), builder.build())
+            true
+        } catch (e: Exception) {
+            AppLogger.e("NativeBridge", "Show notification failed", e)
+            false
+        }
+    }
+
+    private fun cancelBridgeAlarm(tag: String) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            tag.hashCode(),
+            Intent(context, BridgeNotificationReceiver::class.java).apply {
+                action = BRIDGE_NOTIFICATION_ACTION
+            },
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+        )
+        pendingIntent?.let {
+            alarmManager.cancel(it)
+            it.cancel()
+        }
+    }
+
+    private fun scheduleBridgeNotification(payloadJson: JSONObject, forceExact: Boolean): Boolean {
+        return try {
+            val tag = readJsonString(payloadJson, "tag", "id", "notificationId")
+                .ifBlank { "bridge_${System.currentTimeMillis()}" }
+            val title = readJsonString(payloadJson, "title", "notificationTitle")
+                .ifBlank { context.applicationInfo.loadLabel(context.packageManager).toString() }
+            val body = readJsonString(payloadJson, "body", "text", "message", "notificationContent")
+            val channelId = readJsonString(payloadJson, "channelId", "channel").ifBlank { "webapp_notifications" }
+            val channelName = readJsonString(payloadJson, "channelName").ifBlank { Strings.webAppNotificationChannelName }
+            val channelDesc = readJsonString(payloadJson, "channelDescription", "description")
+            val importance = readJsonString(payloadJson, "importance", "priority")
+            val deepLink = readJsonString(payloadJson, "deepLink", "url")
+            val vibrate = payloadJson.optBoolean("vibrate", true)
+            val playSound = payloadJson.optBoolean("playSound", true)
+            val delaySec = readJsonLong(payloadJson, "delaySec") ?: 0L
+            var triggerAtMs = readJsonLong(payloadJson, "triggerAt")
+                ?: (System.currentTimeMillis() + delaySec.coerceAtLeast(0L) * 1000L)
+            if (triggerAtMs in 1..99999999999L) {
+                triggerAtMs *= 1000L
+            }
+            if (triggerAtMs < System.currentTimeMillis()) {
+                triggerAtMs = System.currentTimeMillis() + 500L
+            }
+
+            ensureBridgeNotificationChannel(channelId, channelName, channelDesc, importance, vibrate)
+
+            val alarmIntent = Intent(context, BridgeNotificationReceiver::class.java).apply {
+                action = BRIDGE_NOTIFICATION_ACTION
+                putExtra(EXTRA_BRIDGE_TITLE, title)
+                putExtra(EXTRA_BRIDGE_BODY, body)
+                putExtra(EXTRA_BRIDGE_TAG, tag)
+                putExtra(EXTRA_BRIDGE_CHANNEL_ID, channelId)
+                putExtra(EXTRA_BRIDGE_CHANNEL_NAME, channelName)
+                putExtra(EXTRA_BRIDGE_CHANNEL_DESC, channelDesc)
+                putExtra(EXTRA_BRIDGE_IMPORTANCE, importance)
+                putExtra(EXTRA_BRIDGE_VIBRATE, vibrate)
+                putExtra(EXTRA_BRIDGE_SOUND, playSound)
+                putExtra(EXTRA_BRIDGE_DEEP_LINK, deepLink)
+            }
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                tag.hashCode(),
+                alarmIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return false
+            if (forceExact || Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent)
+                } else {
+                    alarmManager.setExact(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent)
+                }
+            } else {
+                alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAtMs, pendingIntent)
+            }
+            true
+        } catch (e: Exception) {
+            AppLogger.e("NativeBridge", "Schedule notification failed", e)
             false
         }
     }

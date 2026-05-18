@@ -51,8 +51,9 @@ Notification/runtime:
 - `scheduleNotification`
 - `cancelNotification`
 - `cancelAllNotifications`
-- `startForegroundService`
-- `stopForegroundService`
+- `startBackgroundService`
+- `stopBackgroundService`
+- `isBackgroundServiceRunning`
 - `scheduleWorker`
 - `scheduleExactAlarm`
 - `canScheduleExactAlarms`
@@ -65,7 +66,7 @@ Notification/runtime:
 ## Test Outcomes
 
 - Bridge detected in APK mode
-- Bridge method count observed: 56
+- Bridge method count observed: 57
 - Foreground notification: triggered
 - Sound notification: triggered
 - Action/deep-link notification: triggered
@@ -77,3 +78,5 @@ Notification/runtime:
 
 - Compiler log warnings were observed during cloud build but were non-fatal.
 - This report is intended as QA validation feedback for maintainers and contributors.
+- The PHP test harness uses compatibility probing (method aliases) so old and
+  new bridge method names can both be tested safely.
