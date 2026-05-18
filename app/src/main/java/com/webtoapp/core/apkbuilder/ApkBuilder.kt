@@ -3258,47 +3258,14 @@ fun WebApp.toApkConfig(packageName: String, context: android.content.Context? = 
         versionCode = apkExportConfig?.customVersionCode ?: 1,
         versionName = apkExportConfig?.customVersionName?.takeIf { it.isNotBlank() } ?: "1.0.0",
         iconPath = iconPath,
-        runtimePermissions = (apkExportConfig?.runtimePermissions ?: ApkRuntimePermissions()).let { rp ->
-            var result = rp
-
-
-            if (apkExportConfig?.backgroundRunEnabled == true) {
-                result = result.copy(
-                    foregroundService = true,
-                    wakeLock = true,
-                    notifications = true,
-                    requestIgnoreBatteryOptimizations = true
-                )
-            }
-
-
-            if (apkExportConfig?.notificationEnabled == true) {
-                result = result.copy(
-                    notifications = true,
-                    foregroundService = true
-                )
-            }
-
-
-            if (autoStartConfig?.bootStartEnabled == true) {
-                result = result.copy(bootCompleted = true)
-            }
-
-
-            if (webViewConfig.floatingWindowConfig.enabled) {
-                result = result.copy(systemAlertWindow = true)
-            }
-
-
-            if (forcedRunConfig?.enabled == true) {
-                result = result.copy(
-                    foregroundService = true,
-                    wakeLock = true
-                )
-            }
-
-            result
-        },
+        runtimePermissions = buildRuntimePermissionsForApkExport(
+            basePermissions = apkExportConfig?.runtimePermissions,
+            backgroundRunEnabled = apkExportConfig?.backgroundRunEnabled == true,
+            notificationEnabled = apkExportConfig?.notificationEnabled == true,
+            bootStartEnabled = autoStartConfig?.bootStartEnabled == true,
+            floatingWindowEnabled = webViewConfig.floatingWindowConfig.enabled,
+            forcedRunEnabled = forcedRunConfig?.enabled == true
+        ),
         networkTrustConfig = apkExportConfig?.networkTrustConfig ?: com.webtoapp.data.model.NetworkTrustConfig(),
         activationEnabled = activationEnabled,
         activationCodes = getActivationCodeStrings(),
@@ -3415,6 +3382,7 @@ fun WebApp.toApkConfig(packageName: String, context: android.content.Context? = 
         enableShareBridge = webViewConfig.enableShareBridge,
         enableZoomPolyfill = webViewConfig.enableZoomPolyfill,
         enableCrossOriginIsolation = webViewConfig.enableCrossOriginIsolation,
+        hideUrlPreview = webViewConfig.hideUrlPreview,
         disableShields = webViewConfig.disableShields,
         decodeBase64DeepLinks = webViewConfig.decodeBase64DeepLinks,
         mediaAutoplayEnabled = webViewConfig.mediaAutoplayEnabled,
@@ -3586,7 +3554,9 @@ fun WebApp.toApkConfig(packageName: String, context: android.content.Context? = 
         extensionEnabled = extensionEnabled,
         extensionFabIcon = extensionFabIcon ?: "",
         extensionModuleIds = extensionModuleIds,
+        embeddedExtensionModules = emptyList(),
 
+        autoStartEnabled = autoStartConfig != null,
         bootStartEnabled = autoStartConfig?.bootStartEnabled ?: false,
         scheduledStartEnabled = autoStartConfig?.scheduledStartEnabled ?: false,
         scheduledTime = autoStartConfig?.scheduledTime ?: "08:00",
@@ -3667,23 +3637,22 @@ fun WebApp.toApkConfig(packageName: String, context: android.content.Context? = 
         phpAppLandscapeMode = phpAppConfig?.landscapeMode ?: false,
 
 
-        pythonAppFramework = pythonAppConfig?.framework ?: "",
-        pythonAppEntryFile = pythonAppConfig?.entryFile ?: "app.py",
-        pythonAppEntryModule = pythonAppConfig?.entryModule ?: "",
-        pythonAppServerType = pythonAppConfig?.serverType ?: "builtin",
-        pythonAppPort = pythonAppConfig?.serverPort ?: 0,
-        pythonAppEnvVars = pythonAppConfig?.envVars ?: emptyMap(),
-        pythonAppLandscapeMode = pythonAppConfig?.landscapeMode ?: false,
+    ).apply {
+        pythonAppFramework = pythonAppConfig?.framework ?: ""
+        pythonAppEntryFile = pythonAppConfig?.entryFile ?: "app.py"
+        pythonAppEntryModule = pythonAppConfig?.entryModule ?: ""
+        pythonAppServerType = pythonAppConfig?.serverType ?: "builtin"
+        pythonAppPort = pythonAppConfig?.serverPort ?: 0
+        pythonAppEnvVars = pythonAppConfig?.envVars ?: emptyMap()
+        pythonAppLandscapeMode = pythonAppConfig?.landscapeMode ?: false
 
-
-        goAppFramework = goAppConfig?.framework ?: "",
-        goAppBinaryName = goAppConfig?.binaryName ?: "",
-        goAppTargetArch = goAppConfig?.targetArch ?: "arm64-v8a",
-        goAppPort = goAppConfig?.serverPort ?: 0,
-        goAppStaticDir = goAppConfig?.staticDir ?: "",
-        goAppEnvVars = goAppConfig?.envVars ?: emptyMap(),
-        goAppLandscapeMode = goAppConfig?.landscapeMode ?: false,
-
+        goAppFramework = goAppConfig?.framework ?: ""
+        goAppBinaryName = goAppConfig?.binaryName ?: ""
+        goAppTargetArch = goAppConfig?.targetArch ?: "arm64-v8a"
+        goAppPort = goAppConfig?.serverPort ?: 0
+        goAppStaticDir = goAppConfig?.staticDir ?: ""
+        goAppEnvVars = goAppConfig?.envVars ?: emptyMap()
+        goAppLandscapeMode = goAppConfig?.landscapeMode ?: false
 
         multiWebSites = multiWebConfig?.sites?.map { site ->
             com.webtoapp.core.shell.MultiWebSiteShellConfig(
@@ -3698,13 +3667,13 @@ fun WebApp.toApkConfig(packageName: String, context: android.content.Context? = 
                 linkSelector = site.linkSelector,
                 enabled = site.enabled
             )
-        } ?: emptyList(),
-        multiWebDisplayMode = multiWebConfig?.displayMode ?: "TABS",
-        multiWebRefreshInterval = multiWebConfig?.refreshInterval ?: 30,
-        multiWebShowSiteIcons = multiWebConfig?.showSiteIcons ?: true,
-        multiWebLandscapeMode = multiWebConfig?.landscapeMode ?: false,
+        } ?: emptyList()
+        multiWebDisplayMode = multiWebConfig?.displayMode ?: "TABS"
+        multiWebRefreshInterval = multiWebConfig?.refreshInterval ?: 30
+        multiWebShowSiteIcons = multiWebConfig?.showSiteIcons ?: true
+        multiWebLandscapeMode = multiWebConfig?.landscapeMode ?: false
         multiWebProjectId = multiWebConfig?.projectId ?: ""
-    )
+    }
 }
 
 
@@ -3914,9 +3883,8 @@ fun WebApp.toApkConfigWithModules(packageName: String, context: android.content.
         emptyList()
     }
 
-    return baseConfig.copy(
-        embeddedExtensionModules = embeddedModules
-    )
+    baseConfig.embeddedExtensionModules = embeddedModules
+    return baseConfig
 }
 
 
@@ -3971,4 +3939,52 @@ sealed class BuildResult {
         val logPath: String? = null,
         val diagnostic: BuildDiagnostic? = null
     ) : BuildResult()
+}
+private fun buildRuntimePermissionsForApkExport(
+    basePermissions: ApkRuntimePermissions?,
+    backgroundRunEnabled: Boolean,
+    notificationEnabled: Boolean,
+    bootStartEnabled: Boolean,
+    floatingWindowEnabled: Boolean,
+    forcedRunEnabled: Boolean
+): ApkRuntimePermissions {
+    val base = basePermissions ?: ApkRuntimePermissions()
+    val requireForegroundService = backgroundRunEnabled || notificationEnabled || forcedRunEnabled
+    val requireWakeLock = backgroundRunEnabled || forcedRunEnabled
+    return ApkRuntimePermissions(
+        camera = base.camera,
+        microphone = base.microphone,
+        location = base.location,
+        notifications = base.notifications || backgroundRunEnabled || notificationEnabled,
+        readExternalStorage = base.readExternalStorage,
+        writeExternalStorage = base.writeExternalStorage,
+        readMediaImages = base.readMediaImages,
+        readMediaVideo = base.readMediaVideo,
+        readMediaAudio = base.readMediaAudio,
+        bluetooth = base.bluetooth,
+        nfc = base.nfc,
+        wifiState = base.wifiState,
+        bodySensors = base.bodySensors,
+        activityRecognition = base.activityRecognition,
+        readPhoneState = base.readPhoneState,
+        callPhone = base.callPhone,
+        readContacts = base.readContacts,
+        writeContacts = base.writeContacts,
+        readCalendar = base.readCalendar,
+        writeCalendar = base.writeCalendar,
+        readSms = base.readSms,
+        sendSms = base.sendSms,
+        receiveSms = base.receiveSms,
+        readCallLog = base.readCallLog,
+        writeCallLog = base.writeCallLog,
+        processOutgoingCalls = base.processOutgoingCalls,
+        foregroundService = base.foregroundService || requireForegroundService,
+        wakeLock = base.wakeLock || requireWakeLock,
+        requestIgnoreBatteryOptimizations = base.requestIgnoreBatteryOptimizations || backgroundRunEnabled,
+        bootCompleted = base.bootCompleted || bootStartEnabled,
+        vibration = base.vibration,
+        installPackages = base.installPackages,
+        requestDeletePackages = base.requestDeletePackages,
+        systemAlertWindow = base.systemAlertWindow || floatingWindowEnabled
+    )
 }

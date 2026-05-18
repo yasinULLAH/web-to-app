@@ -951,7 +951,7 @@ data class ApkConfig(
 
     val extensionEnabled: Boolean = false,
     val extensionModuleIds: List<String> = emptyList(),
-    val embeddedExtensionModules: List<EmbeddedExtensionModule> = emptyList(),
+    var embeddedExtensionModules: List<EmbeddedExtensionModule> = emptyList(),
     val extensionFabIcon: String = "",
 
 
@@ -1025,34 +1025,31 @@ data class ApkConfig(
     val phpAppEntryFile: String = "index.php",
     val phpAppPort: Int = 0,
     val phpAppEnvVars: Map<String, String> = emptyMap(),
-    val phpAppLandscapeMode: Boolean = false,
+    val phpAppLandscapeMode: Boolean = false
+) {
+    var pythonAppFramework: String = ""
+    var pythonAppEntryFile: String = "app.py"
+    var pythonAppEntryModule: String = ""
+    var pythonAppServerType: String = "builtin"
+    var pythonAppPort: Int = 0
+    var pythonAppEnvVars: Map<String, String> = emptyMap()
+    var pythonAppLandscapeMode: Boolean = false
 
+    var goAppFramework: String = ""
+    var goAppBinaryName: String = ""
+    var goAppTargetArch: String = "arm64-v8a"
+    var goAppPort: Int = 0
+    var goAppStaticDir: String = ""
+    var goAppEnvVars: Map<String, String> = emptyMap()
+    var goAppLandscapeMode: Boolean = false
 
-    val pythonAppFramework: String = "",
-    val pythonAppEntryFile: String = "app.py",
-    val pythonAppEntryModule: String = "",
-    val pythonAppServerType: String = "builtin",
-    val pythonAppPort: Int = 0,
-    val pythonAppEnvVars: Map<String, String> = emptyMap(),
-    val pythonAppLandscapeMode: Boolean = false,
-
-
-    val goAppFramework: String = "",
-    val goAppBinaryName: String = "",
-    val goAppTargetArch: String = "arm64-v8a",
-    val goAppPort: Int = 0,
-    val goAppStaticDir: String = "",
-    val goAppEnvVars: Map<String, String> = emptyMap(),
-    val goAppLandscapeMode: Boolean = false,
-
-
-    val multiWebSites: List<com.webtoapp.core.shell.MultiWebSiteShellConfig> = emptyList(),
-    val multiWebDisplayMode: String = "TABS",
-    val multiWebRefreshInterval: Int = 30,
-    val multiWebShowSiteIcons: Boolean = true,
-    val multiWebLandscapeMode: Boolean = false,
-    val multiWebProjectId: String = ""
-)
+    var multiWebSites: List<com.webtoapp.core.shell.MultiWebSiteShellConfig> = emptyList()
+    var multiWebDisplayMode: String = "TABS"
+    var multiWebRefreshInterval: Int = 30
+    var multiWebShowSiteIcons: Boolean = true
+    var multiWebLandscapeMode: Boolean = false
+    var multiWebProjectId: String = ""
+}
 
 
 
