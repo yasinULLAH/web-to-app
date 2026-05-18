@@ -57,9 +57,21 @@ jobs:
 
       - name: Run fast sanity tasks
         run: |
+          set -o pipefail
           ./gradlew --no-daemon --no-configuration-cache --stacktrace \
             :app:compileDebugKotlin \
-            :app:kspDebugKotlin
+            -x :app:syncShellTemplateApk \
+            -x :shell:assembleRelease 2>&1 | tee gradle-sanity.log
+          status=${PIPESTATUS[0]}
+          if [ $status -ne 0 ]; then
+            echo "## Sanity Failure Summary" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            grep -nE "FAILURE: Build failed|\\* What went wrong:|Caused by:" -A4 -B2 gradle-sanity.log | tail -n 200 >> "$GITHUB_STEP_SUMMARY" || true
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Showing tail of gradle-sanity.log in job output for quick debugging:"
+            tail -n 240 gradle-sanity.log || true
+            exit $status
+          fi
 
       - name: Upload sanity logs (always)
         if: always()
@@ -70,6 +82,7 @@ jobs:
             **/build/reports/**
             **/build/outputs/logs/**
             **/*.log
+            gradle-sanity.log
           if-no-files-found: warn
           retention-days: 7
 
@@ -108,7 +121,19 @@ jobs:
             "ndk;28.2.13676358"
 
       - name: Build debug APK
-        run: ./gradlew --no-daemon --no-configuration-cache --stacktrace :app:assembleDebug
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon --no-configuration-cache --stacktrace :app:assembleDebug 2>&1 | tee gradle-build.log
+          status=${PIPESTATUS[0]}
+          if [ $status -ne 0 ]; then
+            echo "## Build Failure Summary" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            grep -nE "FAILURE: Build failed|\\* What went wrong:|Caused by:" -A4 -B2 gradle-build.log | tail -n 220 >> "$GITHUB_STEP_SUMMARY" || true
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Showing tail of gradle-build.log in job output for quick debugging:"
+            tail -n 260 gradle-build.log || true
+            exit $status
+          fi
 
       - name: Locate generated APKs
         if: always()
@@ -134,5 +159,6 @@ jobs:
             **/build/reports/**
             **/build/outputs/logs/**
             **/*.log
+            gradle-build.log
           if-no-files-found: warn
           retention-days: 7
