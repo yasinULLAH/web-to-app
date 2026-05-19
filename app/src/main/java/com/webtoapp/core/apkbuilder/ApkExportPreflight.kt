@@ -3,6 +3,7 @@ package com.webtoapp.core.apkbuilder
 import android.content.Context
 import com.webtoapp.core.i18n.Strings
 import com.webtoapp.data.model.AppType
+import com.webtoapp.data.model.ExportArtifactType
 import com.webtoapp.data.model.WebApp
 import java.io.File
 
@@ -50,6 +51,7 @@ object ApkExportPreflight {
         }
 
         issues.addGeneralWarnings(webApp)
+        issues.addAabRequirements(webApp)
         issues.addNetworkTrustWarnings(webApp)
 
         return ApkExportPreflightReport(issues)
@@ -187,6 +189,65 @@ object ApkExportPreflight {
                 )
             )
         }
+    }
+
+    private fun MutableList<ApkExportPreflightIssue>.addAabRequirements(webApp: WebApp) {
+        val exportConfig = webApp.apkExportConfig ?: return
+        val artifactType = exportConfig.artifactType ?: ExportArtifactType.APK
+        if (artifactType != ExportArtifactType.AAB) return
+
+        val strictPackageRegex = Regex("^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$")
+        val packageName = exportConfig.customPackageName.orEmpty().trim()
+        if (packageName.isBlank()) {
+            add(
+                ApkExportPreflightIssue(
+                    severity = ApkExportPreflightSeverity.Error,
+                    key = "aab.packageName",
+                    title = "AAB requires custom package name",
+                    message = "Set package name before generating Play-ready AAB project."
+                )
+            )
+        } else if (!strictPackageRegex.matches(packageName)) {
+            add(
+                ApkExportPreflightIssue(
+                    severity = ApkExportPreflightSeverity.Error,
+                    key = "aab.packageName",
+                    title = "Package name format invalid",
+                    message = "Use reverse-domain style package name, e.g. com.example.app."
+                )
+            )
+        }
+
+        if ((exportConfig.customVersionCode ?: 0) <= 0) {
+            add(
+                ApkExportPreflightIssue(
+                    severity = ApkExportPreflightSeverity.Error,
+                    key = "aab.versionCode",
+                    title = "AAB requires version code",
+                    message = "Set a positive version code for Play upload."
+                )
+            )
+        }
+
+        if (exportConfig.customVersionName.isNullOrBlank()) {
+            add(
+                ApkExportPreflightIssue(
+                    severity = ApkExportPreflightSeverity.Error,
+                    key = "aab.versionName",
+                    title = "AAB requires version name",
+                    message = "Set version name before generating Play-ready AAB project."
+                )
+            )
+        }
+
+        add(
+            ApkExportPreflightIssue(
+                severity = ApkExportPreflightSeverity.Warning,
+                key = "aab.signing",
+                title = "Upload key needed for final AAB",
+                message = "Configure release signing in exported project (local.properties) before running bundleRelease."
+            )
+        )
     }
 
     private fun BuildInputIssue.title(): String {

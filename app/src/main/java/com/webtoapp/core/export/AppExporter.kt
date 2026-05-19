@@ -403,29 +403,70 @@ include(":app")
     """.trimIndent()
 
     private fun generateAppBuildGradle(webApp: WebApp): String {
-        val packageName = "com.webtoapp.${sanitizePackageName(webApp.name)}"
+        val configuredPackageName = webApp.apkExportConfig?.customPackageName
+            ?.trim()
+            ?.takeIf { isValidPackageName(it) }
+        val packageName = configuredPackageName ?: "com.webtoapp.${sanitizePackageName(webApp.name)}"
+        val versionCode = (webApp.apkExportConfig?.customVersionCode ?: 1).coerceAtLeast(1)
+        val versionName = (webApp.apkExportConfig?.customVersionName ?: "1.0.0")
+            .replace("\"", "\\\"")
         return """
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
 
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) {
+        file.inputStream().use { load(it) }
+    }
+}
+
+val releaseSigningStoreFile = localProperties.getProperty("signing.storeFile")
+    ?.takeIf { it.isNotBlank() }
+    ?.let { rootProject.file(it) }
+val hasReleaseSigningConfig = releaseSigningStoreFile?.isFile == true &&
+    !localProperties.getProperty("signing.storePassword").isNullOrBlank() &&
+    !localProperties.getProperty("signing.keyAlias").isNullOrBlank() &&
+    !localProperties.getProperty("signing.keyPassword").isNullOrBlank()
+
 android {
+    signingConfigs {
+        if (hasReleaseSigningConfig) {
+            create("release") {
+                storeFile = releaseSigningStoreFile
+                storePassword = localProperties.getProperty("signing.storePassword")
+                keyAlias = localProperties.getProperty("signing.keyAlias")
+                keyPassword = localProperties.getProperty("signing.keyPassword")
+            }
+        }
+    }
     namespace = "$packageName"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "$packageName"
         minSdk = 24
-        targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        targetSdk = 36
+        versionCode = $versionCode
+        versionName = "$versionName"
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName(if (hasReleaseSigningConfig) "release" else "debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
+        }
+    }
+
+    bundle {
+        language {
+            enableSplit = false
         }
     }
 
@@ -551,6 +592,10 @@ object AppConfig {
             .replace(SANITIZE_PACKAGE_REGEX, "")
             .take(20)
             .ifEmpty { "app" }
+    }
+
+    private fun isValidPackageName(packageName: String): Boolean {
+        return Regex("^[a-zA-Z][a-zA-Z0-9_]*(\\.[a-zA-Z][a-zA-Z0-9_]*)+$").matches(packageName)
     }
 
     private fun WebApp.toExportFormat() = mapOf(

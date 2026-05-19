@@ -53,6 +53,7 @@ import com.webtoapp.core.logging.AppLogger
 import com.webtoapp.data.dao.WebAppSummary
 import com.webtoapp.data.model.AppCategory
 import com.webtoapp.data.model.WebApp
+import com.webtoapp.ui.components.PremiumFilterChip
 import com.webtoapp.ui.components.CategoryEditorDialog
 import com.webtoapp.ui.components.CategoryTabRow
 import com.webtoapp.ui.components.EnhancedElevatedCard
@@ -1825,6 +1826,7 @@ fun BuildApkDialog(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val apkBuilder = remember { ApkBuilder(context) }
+    val appExporter = remember { com.webtoapp.core.export.AppExporter(context) }
 
     var isBuilding by remember { mutableStateOf(false) }
     var progress by remember { mutableIntStateOf(0) }
@@ -1833,6 +1835,10 @@ fun BuildApkDialog(
     var buildFailureReport by remember { mutableStateOf<BuildFailureReport?>(null) }
     var preflightReport by remember { mutableStateOf<ApkExportPreflightReport?>(null) }
 
+
+    var artifactType by remember {
+        mutableStateOf(webApp.apkExportConfig?.artifactType ?: com.webtoapp.data.model.ExportArtifactType.APK)
+    }
 
     var encryptionConfig by remember {
         mutableStateOf(webApp.apkExportConfig?.encryptionConfig ?: com.webtoapp.data.model.ApkEncryptionConfig())
@@ -1888,6 +1894,7 @@ fun BuildApkDialog(
                 dnsConfig = dnsConfig
             ),
             apkExportConfig = (webApp.apkExportConfig ?: com.webtoapp.data.model.ApkExportConfig()).copy(
+                artifactType = artifactType,
                 encryptionConfig = encryptionConfig,
                 hardeningConfig = hardeningConfig,
                 isolationConfig = isolationConfig,
@@ -1903,6 +1910,8 @@ fun BuildApkDialog(
     fun launchBuild() {
         if (isBuilding) return
         val webAppWithConfig = currentBuildConfig()
+        val artifactType = webAppWithConfig.apkExportConfig?.artifactType
+            ?: com.webtoapp.data.model.ExportArtifactType.APK
         val nextPreflight = ApkExportPreflight.check(context, webAppWithConfig)
         preflightReport = nextPreflight
         if (nextPreflight.hasErrors) {
@@ -1914,6 +1923,42 @@ fun BuildApkDialog(
         analysisReport = null
         scope.launch {
             try {
+                if (artifactType == com.webtoapp.data.model.ExportArtifactType.AAB) {
+                    progress = 5
+                    progressText = "Preparing AAB export..."
+                    val exportResult = runCatching {
+                        progress = 30
+                        progressText = "Generating Android Studio project..."
+                        appExporter.exportAsTemplate(webAppWithConfig)
+                    }.getOrElse { throwable ->
+                        com.webtoapp.core.export.ExportResult.Error(
+                            throwable.message ?: "AAB export failed"
+                        )
+                    }
+
+                    when (exportResult) {
+                        is com.webtoapp.core.export.ExportResult.Success -> {
+                            progress = 100
+                            progressText = "AAB project export complete."
+                            isBuilding = false
+                            onResult(
+                                "AAB project exported to: ${exportResult.path}\n" +
+                                    "Next: open it in Android Studio, configure signing, run ./gradlew bundleRelease."
+                            )
+                        }
+                        is com.webtoapp.core.export.ExportResult.Error -> {
+                            buildFailureReport = buildActionFailureReport(
+                                title = Strings.buildFailed,
+                                stage = "build_aab_export",
+                                webApp = webAppWithConfig,
+                                summary = exportResult.message
+                            )
+                            isBuilding = false
+                        }
+                    }
+                    return@launch
+                }
+
                 val result = apkBuilder.buildApk(webAppWithConfig) { p, t ->
                     progress = p
                     progressText = t
@@ -1937,7 +1982,11 @@ fun BuildApkDialog(
             } catch (t: Throwable) {
                 buildFailureReport = buildActionFailureReport(
                     title = Strings.buildFailed,
-                    stage = "build_apk_unhandled",
+                    stage = if (artifactType == com.webtoapp.data.model.ExportArtifactType.AAB) {
+                        "build_aab_unhandled"
+                    } else {
+                        "build_apk_unhandled"
+                    },
                     webApp = webAppWithConfig,
                     summary = Strings.shareApkFailed.replace("%s", t.message ?: "Unhandled exception"),
                     throwable = t
@@ -2068,15 +2117,68 @@ fun BuildApkDialog(
                     )
                 }
 
+
+                EnhancedElevatedCard(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Outlined.Save,
+                                null,
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "Build Output Format",
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            com.webtoapp.data.model.ExportArtifactType.entries.forEach { type ->
+                                PremiumFilterChip(
+                                    selected = artifactType == type,
+                                    onClick = { artifactType = type },
+                                    label = {
+                                        Text(
+                                            if (type == com.webtoapp.data.model.ExportArtifactType.APK) "APK"
+                                            else "AAB (Play Store)"
+                                        )
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+
                 HorizontalDivider()
 
+                val selectedArtifact = currentBuildConfig().apkExportConfig?.artifactType
+                    ?: com.webtoapp.data.model.ExportArtifactType.APK
                 Text(
-                    Strings.buildApkForApp.replace("%s", webApp.name),
+                    if (selectedArtifact == com.webtoapp.data.model.ExportArtifactType.AAB) {
+                        "Generate Play-ready AAB project for ${webApp.name}"
+                    } else {
+                        Strings.buildApkForApp.replace("%s", webApp.name)
+                    },
                     style = MaterialTheme.typography.bodyMedium
                 )
 
                 Text(
-                    Strings.buildCompleteInstallHint,
+                    if (selectedArtifact == com.webtoapp.data.model.ExportArtifactType.AAB) {
+                        "Exports an Android Studio project. Build .aab with bundleRelease after configuring release signing."
+                    } else {
+                        Strings.buildCompleteInstallHint
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

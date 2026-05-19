@@ -71,8 +71,52 @@ fun ApkExportSection(
     val packageName = config.customPackageName ?: ""
     val isPackageNameInvalid = packageName.isNotBlank() &&
         !packageName.matches(PACKAGE_NAME_REGEX)
+    val selectedArtifactType = config.artifactType ?: ExportArtifactType.APK
 
     Column(verticalArrangement = Arrangement.spacedBy(WtaSpacing.SectionGap)) {
+        WtaSection(
+            title = "Build Output",
+            headerStyle = WtaSectionHeaderStyle.Quiet
+        ) {
+            WtaSettingCard {
+                Column(
+                    modifier = Modifier.padding(
+                        horizontal = WtaSpacing.RowHorizontal,
+                        vertical = WtaSpacing.ContentGap
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(WtaSpacing.ContentGap)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(WtaSpacing.ContentGap)
+                    ) {
+                        ExportArtifactType.entries.forEach { artifactType ->
+                            PremiumFilterChip(
+                                selected = selectedArtifactType == artifactType,
+                                onClick = { onConfigChange(config.copy(artifactType = artifactType)) },
+                                label = {
+                                    Text(
+                                        if (artifactType == ExportArtifactType.APK) "APK"
+                                        else "AAB (Play Store)"
+                                    )
+                                },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = if (selectedArtifactType == ExportArtifactType.APK) {
+                            "Build and install an APK directly on device."
+                        } else {
+                            "Generate an Android Studio project for Play-ready AAB build (bundleRelease)."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
 
         // ── 基本信息 ──────────────────────────────────────────
         WtaSection(

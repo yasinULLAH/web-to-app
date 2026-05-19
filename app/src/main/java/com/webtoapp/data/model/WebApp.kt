@@ -935,10 +935,16 @@ enum class ApkArchitecture(
     }
 }
 
+enum class ExportArtifactType {
+    APK,
+    AAB
+}
+
 data class ApkExportConfig(
     val customPackageName: String? = null,
     val customVersionName: String? = null,
     val customVersionCode: Int? = null,
+    val artifactType: ExportArtifactType? = ExportArtifactType.APK,
     val architecture: ApkArchitecture = ApkArchitecture.UNIVERSAL,
     val runtimePermissions: ApkRuntimePermissions = ApkRuntimePermissions(),
     val networkTrustConfig: NetworkTrustConfig = NetworkTrustConfig(),
