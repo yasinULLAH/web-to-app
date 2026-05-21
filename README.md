@@ -57,10 +57,12 @@ PHP · Python · Go · Image · Video · Gallery · Multi-Web
   (Firefox) backend.
 - **GitHub-backed Module Market** — install community JS/CSS modules without
   shipping an app update; the catalog lives in this repository.
+- **GitHub Actions Cloud Build** — build and sign APKs online via CI/CD; no local Android SDK required.
 - **Bundled Chrome extension support** — runs unmodified MV3 extensions
   inside the WebView. Ships with the BewlyCat extension as a working example.
 - **Local server runtimes** — Node.js, PHP, Python, and Go execute on-device
   via a local HTTP server. WordPress runs against the bundled PHP.
+- **Enhanced NativeBridge API** — deep integration for Security, Notifications, Runtime states, and background workers directly from JS.
 - **Deeply customisable WebView** — UA spoofing, 28-vector fingerprint
   disguise, ad blocking, DNS-over-HTTPS, JS/CSS injection, payment scheme
   handlers.
@@ -454,9 +456,15 @@ Three lanes, in increasing scope:
 | Issues | Report a bug or request a feature | [GitHub Issues](https://github.com/shiahonb777/web-to-app/issues) |
 | Code | Fix a bug or build a feature in the Android client | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
 
-## Contact
+## Contact & Contributors
 
 Developed by **shiaho**.
+
+### Major Contributors
+- **Yasin Ullah** ([@yasinULLAH](https://github.com/yasinULLAH))
+  - Architected the **Enhanced NativeBridge** (Security, Notifications, and Runtime APIs).
+  - Implemented the **GitHub Actions Cloud Build** pipeline.
+  - Developed comprehensive developer documentation and validation tools.
 
 | Platform | Link |
 | --- | --- |
