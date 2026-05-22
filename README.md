@@ -57,10 +57,12 @@ PHP · Python · Go · Image · Video · Gallery · Multi-Web
   (Firefox) backend.
 - **GitHub-backed Module Market** — install community JS/CSS modules without
   shipping an app update; the catalog lives in this repository.
+- **GitHub Actions Cloud Build** — build and sign APKs online via CI/CD; no local Android SDK required.
 - **Bundled Chrome extension support** — runs unmodified MV3 extensions
   inside the WebView. Ships with the BewlyCat extension as a working example.
 - **Local server runtimes** — Node.js, PHP, Python, and Go execute on-device
   via a local HTTP server. WordPress runs against the bundled PHP.
+- **Enhanced NativeBridge API** — deep integration for Security, Notifications, Runtime states, and background workers directly from JS.
 - **Deeply customisable WebView** — UA spoofing, 28-vector fingerprint
   disguise, ad blocking, DNS-over-HTTPS, JS/CSS injection, payment scheme
   handlers.
@@ -73,6 +75,46 @@ PHP · Python · Go · Image · Video · Gallery · Multi-Web
 - **Trilingual UI** — Chinese, English, Arabic out of the box.
 
 ---
+
+## Verified NativeBridge Extension Status (2026-05-18)
+
+The custom branch build validated on a physical Android device now includes:
+
+- Security methods:
+  `isDeveloperOptionsEnabled`, `isAdbEnabled`, `isDebuggable`, `getSecurityInfo`
+- Notification and runtime methods:
+  `areNotificationsEnabled`, `openNotificationSettings`, `createNotificationChannel`,
+  `showNotification`, `scheduleNotification`, `cancelNotification`,
+  `cancelAllNotifications`, `startForegroundService`, `stopForegroundService`,
+  `scheduleWorker`, `scheduleExactAlarm`, `canScheduleExactAlarms`, `isDozeMode`,
+  `isIgnoringBatteryOptimizations`, `openBatteryOptimizationSettings`,
+  `getAppState`, `isAppInForeground`
+- Credential/autofill behavior:
+  Android WebView autofill is explicitly enabled, legacy pre-Android-O form save
+  is enabled, and `navigator.credentials` now supports `create/get/store` with
+  local storage backed fallback for compatibility.
+
+Validation summary from APK Inspector Pro:
+
+- Bridge detected and active in APK mode
+- Native security info returned correct JSON values
+- Notification tests triggered successfully (foreground/sound/action/scheduled)
+- Worker/alarm wakeup requested successfully
+- Runtime state methods returned successfully
+- Bridge method count observed: 56
+
+Cloud build proof:
+
+- GitHub Actions cloud pipeline succeeded in 12m 44s
+- Warnings in logs were non-fatal and expected for this repo
+
+Supporting docs:
+
+- `ADDED_FEATURES_AND_RESULTS.md`
+- `GITHUB_ACTIONS_APK_GUIDE.md`
+- `UPDATE_AND_REBUILD_FLOW.md`
+- `how to convert to apk.md`
+- `NATIVEBRIDGE_VALIDATION_REPORT.md`
 
 ## Module Market
 
@@ -419,9 +461,15 @@ Three lanes, in increasing scope:
 | Issues | Report a bug or request a feature | [GitHub Issues](https://github.com/shiahonb777/web-to-app/issues) |
 | Code | Fix a bug or build a feature in the Android client | [`CONTRIBUTING.md`](CONTRIBUTING.md) |
 
-## Contact
+## Contact & Contributors
 
 Developed by **shiaho**.
+
+### Major Contributors
+- **Yasin Ullah** ([@yasinULLAH](https://github.com/yasinULLAH))
+  - Architected the **Enhanced NativeBridge** (Security, Notifications, and Runtime APIs).
+  - Implemented the **GitHub Actions Cloud Build** pipeline.
+  - Developed comprehensive developer documentation and validation tools.
 
 | Platform | Link |
 | --- | --- |
